@@ -34,7 +34,6 @@ def update_existing_data(ticker, csv_path):
 
     last_date = existing_df.index.max()
 
-    # --- MODIFIED LINE ---
     # Start download from the last saved date to create a one-day overlap.
     # This will refresh the last day's data if it was revised.
     start_date = last_date.strftime('%Y-%m-%d')
@@ -98,7 +97,7 @@ def process_all_tickers():
         else:
             initial_download(ticker)
 
-        time.sleep(1)  # Be respectful to the API server
+        time.sleep(1)
 
     print("\n--- All data updates are complete! ---")
 

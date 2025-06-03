@@ -20,8 +20,7 @@ def generate_forecast(price_data):
     close_prices = pd.Series(price_data)
 
     # Build and Train the ARIMA Model (p,d,q)
-    # Using a standard order of ARIMA(5,1,0) as a starting point
-    model = ARIMA(close_prices, order=(5, 1, 0))
+    model = ARIMA(close_prices, order=(4, 1, 5))
     model_fit = model.fit()
 
     # Generate Forecast for the next step
@@ -40,6 +39,9 @@ def generate_forecast(price_data):
         "confidence_interval_upper": upper_bound
     }
 
+@app.route('/')
+def index():
+    return "CryptoViz ARIMA API"
 
 # Define the API endpoint
 @app.route('/forecast', methods=['POST'])
@@ -73,4 +75,4 @@ def handle_forecast():
 # Main execution block to run the Flask app
 if __name__ == '__main__':
     # Runs the app on localhost, port 5000
-    app.run(debug=True, port=5000)
+    app.run(debug=False, host='0.0.0.0',port=5001)

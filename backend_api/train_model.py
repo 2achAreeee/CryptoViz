@@ -2,7 +2,6 @@ import pandas as pd
 from statsmodels.tsa.arima.model import ARIMA
 import warnings
 
-# Suppress warnings from statsmodels to keep the output clean
 warnings.filterwarnings("ignore")
 
 
@@ -32,9 +31,6 @@ def generate_forecast(ticker_symbol):
         return
 
     # 2. Build and Train the ARIMA Model
-    # These parameters (p,d,q) are a common starting point for financial time series.
-    # Your proposal mentions selecting these via AIC/BIC, which is a great next step.
-    # For now, we will use a standard order of ARIMA(5,1,0).
     model = ARIMA(close_prices, order=(5, 1, 0))
 
     print("Training ARIMA(5,1,0) model... This may take a moment.")
@@ -62,5 +58,4 @@ def generate_forecast(ticker_symbol):
 
 # --- Main Execution Block ---
 if __name__ == '__main__':
-    # We will test the function with Bitcoin
     generate_forecast('BTC-USD')

@@ -2,7 +2,7 @@
 import requests
 import pandas as pd
 
-# 1. Load some test data from our CSV file
+# 1. Load some test data from CSV file
 try:
     data = pd.read_csv('../data/BTC-USD.csv')
     # Take the last 100 days of close prices
@@ -12,7 +12,7 @@ except FileNotFoundError:
     exit()
 
 # 2. Define the API endpoint URL
-api_url = "http://127.0.0.1:5000/forecast"
+api_url = "http://localhost:5001/forecast"
 
 # 3. Prepare the JSON data payload
 # This matches the format our Flask API expects [cite: 3]

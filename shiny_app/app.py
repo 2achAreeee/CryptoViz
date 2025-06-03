@@ -1,7 +1,9 @@
 # /shiny_app/app.py
 
 import os
+import json
 import pandas as pd
+import numpy as np
 from shiny import App, render, ui, reactive, req, Session
 import plotly.graph_objects as go
 import requests
@@ -11,14 +13,24 @@ from data_manager import fetch_and_save_ticker_data
 
 # --- Helper Function to Get Available Tickers ---
 def get_available_tickers():
-    data_dir = os.path.join(os.path.dirname(__file__), '..', 'data')
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
+    app_script_dir = os.path.dirname(os.path.abspath(__file__)) # This should be /app in the container
+    data_dir_absolute_path = os.path.join(app_script_dir, 'data')
+
+    if not os.path.exists(data_dir_absolute_path):
+        os.makedirs(data_dir_absolute_path, exist_ok=True)  # Create if it doesn't exist
         return []
-    return sorted([f.replace('.csv', '') for f in os.listdir(data_dir) if f.endswith('.csv')])
+    try:
+        files = os.listdir(data_dir_absolute_path)
+        tickers = sorted([f.replace('.csv', '') for f in files if f.endswith('.csv')])
+        return tickers
+    except Exception:
+        return []
 
 
-TICKERS_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'crypto_tickers.json')
+# Define global file path for tickers JSON correctly
+_app_script_dir_global = os.path.dirname(os.path.abspath(__file__))
+_project_root_dir_global = os.path.dirname(_app_script_dir_global)
+TICKERS_FILE = os.path.join(_project_root_dir_global, 'data', 'crypto_tickers.json')
 
 # --- Shiny App UI ---
 app_ui = ui.page_navbar(
@@ -38,8 +50,6 @@ app_ui = ui.page_navbar(
                          ui.input_action_button("add_ticker_button", "Add Ticker", class_="btn-success"),
                          ui.output_text_verbatim("add_ticker_status"),
                      ),
-                     # --- MODIFIED UI LINE ---
-                     # Changed to ui.output_ui to render raw HTML
                      ui.output_ui("price_plot"),
                      ui.output_ui("forecast_display"),
                  ),
@@ -76,8 +86,22 @@ def server(input, output, session: Session):
     @reactive.Effect
     def _():
         tickers = available_tickers.get()
-        ui.update_select("forecast_crypto_select", choices=tickers, selected=input.forecast_crypto_select())
-        ui.update_selectize("corr_crypto_select", choices=tickers, selected=input.corr_crypto_select())
+        current_forecast_selected = input.forecast_crypto_select()
+        forecast_selected_to_set = None
+        if current_forecast_selected in tickers:
+            forecast_selected_to_set = current_forecast_selected
+        elif tickers:
+            forecast_selected_to_set = tickers[0]
+
+        ui.update_select("forecast_crypto_select", choices=tickers, selected=forecast_selected_to_set)
+
+        current_corr_selected = list(input.corr_crypto_select() or [])
+        corr_selected_to_set = [t for t in current_corr_selected if t in tickers]
+        if not corr_selected_to_set and len(tickers) >= 3:
+            corr_selected_to_set = tickers[:3]
+        elif not corr_selected_to_set and tickers:
+            corr_selected_to_set = tickers[:1]
+        ui.update_selectize("corr_crypto_select", choices=tickers, selected=corr_selected_to_set)
 
     forecast_result = reactive.Value(None)
 
@@ -85,7 +109,9 @@ def server(input, output, session: Session):
     def load_forecast_data():
         ticker = input.forecast_crypto_select()
         req(ticker)
-        file_path = os.path.join(os.path.dirname(__file__), '..', 'data', f"{ticker}.csv")
+        # Path relative to app.py's directory
+        app_script_dir = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(app_script_dir, 'data', f"{ticker}.csv")
         try:
             df = pd.read_csv(file_path, index_col=0, parse_dates=True).reset_index()
             df = df.rename(columns={'index': 'Date'})
@@ -101,23 +127,24 @@ def server(input, output, session: Session):
             forecast_result.set({"error": "Not enough data to forecast."})
             return
         price_list = df['Close'].tail(100).tolist()
-        api_url = "http://127.0.0.1:5000/forecast"
+        api_url = os.environ.get("API_URL", "http://cryptoviz-api-container:5000/forecast")
         json_payload = {"close_prices": price_list}
         try:
             response = requests.post(api_url, json=json_payload, timeout=10)
             if response.status_code == 200:
                 forecast_result.set(response.json())
             else:
-                forecast_result.set({"error": f"API Error: {response.text}"})
-        except requests.exceptions.RequestException:
-            forecast_result.set({"error": "Connection Error: Could not connect to the API."})
+                forecast_result.set({"error": f"API Error: {response.status_code} - {response.text}"})
+        except requests.exceptions.RequestException as e:
+            forecast_result.set({"error": f"Connection Error: {e}"})
 
-    # --- MODIFIED SERVER DECORATOR and RETURN VALUE ---
     @output
-    @render.ui  # Using render.ui to output raw HTML
+    @render.ui
     def price_plot():
         df = load_forecast_data()
-        req(not df.empty)
+        if df.empty:  # Replaced req(not df.empty) for explicit UI feedback
+            return ui.p("Data not available for the selected ticker.", style="color: orange;")
+
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(x=df['Date'], y=df['Close'], mode='lines', name='Close Price', line=dict(color='#007bff')))
@@ -143,8 +170,6 @@ def server(input, output, session: Session):
             ))
         fig.update_layout(title=f"Historical Close Price for {input.forecast_crypto_select()}", xaxis_title="Date",
                           yaxis_title="Price (USD)")
-
-        # Convert Plotly figure to HTML and wrap in ui.HTML
         return ui.HTML(fig.to_html(full_html=False, include_plotlyjs='cdn'))
 
     @output
@@ -155,11 +180,12 @@ def server(input, output, session: Session):
         if "error" in result: return ui.div(ui.h5("Error:", style="color: red;"), ui.p(result["error"]))
         if "predicted_price" in result:
             df = load_forecast_data()
+            if df.empty: return ui.p("Cannot display comparison: data missing.", style="color: orange;")
             last_close = df['Close'].iloc[-1]
             price, lower, upper = result['predicted_price'], result['confidence_interval_lower'], result[
                 'confidence_interval_upper']
             comparison_text, text_color = "", "gray"
-            change_pct = ((price - last_close) / last_close) * 100
+            change_pct = ((price - last_close) / last_close) * 100 if last_close != 0 else 0
             if price > last_close:
                 comparison_text, text_color = f"higher than yesterday's close of ${last_close:,.2f} ({change_pct:+.2f}%)", "green"
             else:
@@ -176,14 +202,18 @@ def server(input, output, session: Session):
         tickers = input.corr_crypto_select()
         timeframe = input.corr_timeframe()
         req(tickers and len(tickers) >= 2)
-        days = int(timeframe[:-1]);
-        start_date = date.today() - timedelta(days=days)
+        days = int(timeframe[:-1])
+        start_date_dt = date.today() - timedelta(days=days)
         log_returns_df = pd.DataFrame()
+
+        app_script_dir = os.path.dirname(os.path.abspath(__file__))
+
         for ticker in tickers:
             try:
-                file_path = os.path.join(os.path.dirname(__file__), '..', 'data', f"{ticker}.csv")
+                file_path = os.path.join(app_script_dir, 'data', f"{ticker}.csv")
                 df_read = pd.read_csv(file_path, index_col='Date', parse_dates=True)
-                df_filtered = df_read[df_read.index >= pd.to_datetime(start_date)]
+                # Ensure index is DatetimeIndex for comparison
+                df_filtered = df_read[df_read.index >= pd.to_datetime(start_date_dt)]
                 log_returns_df[ticker] = df_filtered['Log_Return']
             except FileNotFoundError:
                 continue
@@ -195,7 +225,7 @@ def server(input, output, session: Session):
         from plotnine import ggplot, aes, geom_tile, geom_text, scale_fill_gradient2, labs, theme_minimal
         corr_matrix = calculate_correlation()
         req(corr_matrix is not None and not corr_matrix.empty)
-        corr_melted = corr_matrix.reset_index().melt(id_vars='index');
+        corr_melted = corr_matrix.reset_index().melt(id_vars='index')
         corr_melted.columns = ['Var1', 'Var2', 'value']
         heatmap = (ggplot(corr_melted, aes(x='Var1', y='Var2', fill='value')) + geom_tile(
             aes(width=0.95, height=0.95)) + geom_text(aes(label='round(value, 2)'), size=10) + scale_fill_gradient2(
@@ -214,18 +244,21 @@ def server(input, output, session: Session):
         new_ticker = input.add_ticker_symbol().strip().upper()
         if not new_ticker: status_message.set("Error: Ticker symbol cannot be empty."); return
         if new_ticker in available_tickers.get(): status_message.set(f"'{new_ticker}' is already in the list."); return
+
         success = fetch_and_save_ticker_data(new_ticker)
+
         if success:
             try:
                 with open(TICKERS_FILE, 'r') as f:
                     existing_tickers = json.load(f)
             except (FileNotFoundError, json.JSONDecodeError):
                 existing_tickers = []
-            updated_set = set(existing_tickers);
+            updated_set = set(existing_tickers)
             updated_set.add(new_ticker)
             with open(TICKERS_FILE, 'w') as f:
                 json.dump(sorted(list(updated_set)), f, indent=4)
-            new_list = get_available_tickers();
+
+            new_list = get_available_tickers()  # Re-read from file system
             available_tickers.set(new_list)
             status_message.set(f"Success! Added {new_ticker} to the list.")
         else:
