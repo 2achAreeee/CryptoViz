@@ -1,0 +1,8 @@
+# /shiny_app/requirements.txt
+shiny
+pandas
+numpy
+plotly
+requests
+plotnine
+yfinance
