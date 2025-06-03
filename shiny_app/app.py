@@ -1,25 +1,32 @@
 # /shiny_app/app.py
 
 import os
+import json
 import pandas as pd
-from shiny import App, render, ui, reactive, req
+from shiny import App, render, ui, reactive, req, Session
 from plotnine import ggplot, aes, geom_line, labs, theme_minimal, geom_point, geom_ribbon, geom_tile, geom_text, \
     scale_fill_gradient2
 import requests
 from datetime import timedelta, date
+
+from data_manager import fetch_and_save_ticker_data
 
 
 # --- Helper Function to Get Available Tickers ---
 def get_available_tickers():
     data_dir = os.path.join(os.path.dirname(__file__), '..', 'data')
     if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
         return []
     return sorted([f.replace('.csv', '') for f in os.listdir(data_dir) if f.endswith('.csv')])
 
 
-# --- Shiny App UI (Corrected) ---
+# Define file path for tickers JSON
+TICKERS_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'crypto_tickers.json')
+
+# --- Shiny App UI ---
 app_ui = ui.page_navbar(
-    # MODIFIED: Replaced ui.nav with the correct ui.nav_panel function
+    # ... (UI remains exactly the same as the previous version) ...
     ui.nav_panel("Forecasting",
                  ui.layout_sidebar(
                      ui.sidebar(
@@ -30,12 +37,16 @@ app_ui = ui.page_navbar(
                              choices=get_available_tickers(),
                          ),
                          ui.input_action_button("get_forecast", "Generate Forecast", class_="btn-primary"),
+                         ui.hr(),
+                         ui.h4("New Crypto"),
+                         ui.input_text("add_ticker_symbol", "Add New Ticker:", placeholder="e.g., ICP-USD"),
+                         ui.input_action_button("add_ticker_button", "Add Ticker", class_="btn-success"),
+                         ui.output_text_verbatim("add_ticker_status"),
                      ),
                      ui.output_plot("price_plot"),
                      ui.output_ui("forecast_display"),
                  ),
                  ),
-    # MODIFIED: Replaced ui.nav with the correct ui.nav_panel function
     ui.nav_panel("Correlation Analysis",
                  ui.layout_sidebar(
                      ui.sidebar(
@@ -62,13 +73,26 @@ app_ui = ui.page_navbar(
 
 
 # --- Shiny App Server ---
-def server(input, output, session):
+def server(input, output, session: Session):
+    # --- DYNAMIC STATE MANAGEMENT (New) ---
+    # Create a reactive value to hold the list of tickers, so we can update it dynamically
+    available_tickers = reactive.Value(get_available_tickers())
+
+    # This effect will run whenever a new ticker is added, updating the UI dropdowns
+    @reactive.Effect
+    def _():
+        tickers = available_tickers.get()
+        ui.update_select("forecast_crypto_select", choices=tickers, selected=input.forecast_crypto_select())
+        ui.update_selectize("corr_crypto_select", choices=tickers, selected=input.corr_crypto_select())
+
     # --- FORECASTING LOGIC ---
     forecast_result = reactive.Value(None)
 
     @reactive.Calc
     def load_forecast_data():
+        # This part remains mostly the same
         ticker = input.forecast_crypto_select()
+        req(ticker)  # Ensure a ticker is selected
         file_path = os.path.join(os.path.dirname(__file__), '..', 'data', f"{ticker}.csv")
         try:
             df = pd.read_csv(file_path, index_col=0, parse_dates=True).reset_index()
@@ -80,6 +104,7 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.get_forecast)
     def get_forecast_from_api():
+        # This part remains the same
         df = load_forecast_data()
         price_list = df['Close'].tail(100).tolist()
         api_url = "http://127.0.0.1:5000/forecast"
@@ -96,6 +121,7 @@ def server(input, output, session):
     @output
     @render.plot
     def price_plot():
+        # This part remains the same
         df = load_forecast_data()
         req(not df.empty)
         plot = (ggplot(df, aes(x='Date')) + geom_line(aes(y='Close'), color="#007bff") + labs(
@@ -115,6 +141,7 @@ def server(input, output, session):
     @output
     @render.ui
     def forecast_display():
+        # This part remains the same
         result = forecast_result()
         if not result: return ui.p("Click the button to generate a forecast.", class_="text-muted")
         if "error" in result: return ui.div(ui.h5("Error:", style="color: red;"), ui.p(result["error"]))
@@ -127,16 +154,13 @@ def server(input, output, session):
     # --- CORRELATION ANALYSIS LOGIC ---
     @reactive.Calc
     def calculate_correlation():
+        # This part remains the same
         tickers = input.corr_crypto_select()
         timeframe = input.corr_timeframe()
-
         req(tickers and len(tickers) >= 2)
-
-        days = int(timeframe[:-1])
+        days = int(timeframe[:-1]);
         start_date = date.today() - timedelta(days=days)
-
         log_returns_df = pd.DataFrame()
-
         for ticker in tickers:
             try:
                 file_path = os.path.join(os.path.dirname(__file__), '..', 'data', f"{ticker}.csv")
@@ -145,31 +169,71 @@ def server(input, output, session):
                 log_returns_df[ticker] = df_filtered['Log_Return']
             except FileNotFoundError:
                 continue
-
         return log_returns_df.corr()
 
     @output
     @render.plot
     def correlation_heatmap():
+        # This part remains the same
         corr_matrix = calculate_correlation()
         req(corr_matrix is not None and not corr_matrix.empty)
-
-        corr_melted = corr_matrix.reset_index().melt(id_vars='index')
+        corr_melted = corr_matrix.reset_index().melt(id_vars='index');
         corr_melted.columns = ['Var1', 'Var2', 'value']
-
-        heatmap = (
-                ggplot(corr_melted, aes(x='Var1', y='Var2', fill='value'))
-                + geom_tile(aes(width=0.95, height=0.95))
-                + geom_text(aes(label='round(value, 2)'), size=10)
-                + scale_fill_gradient2(low="red", mid="white", high="blue", limits=(-1, 1))
-                + labs(
-            title=f"Log Return Correlation ({input.corr_timeframe()})",
-            x="", y="", fill="Correlation"
-        )
-                + theme_minimal()
-        )
+        heatmap = (ggplot(corr_melted, aes(x='Var1', y='Var2', fill='value')) + geom_tile(
+            aes(width=0.95, height=0.95)) + geom_text(aes(label='round(value, 2)'), size=10) + scale_fill_gradient2(
+            low="red", mid="white", high="blue", limits=(-1, 1)) + labs(
+            title=f"Log Return Correlation ({input.corr_timeframe()})", x="", y="",
+            fill="Correlation") + theme_minimal())
         return heatmap
 
+    # --- ADD NEW TICKER LOGIC (with JSON update) ---
+    @reactive.Effect
+    @reactive.event(input.add_ticker_button)
+    def add_new_ticker():
+        status_message.set("")
+        new_ticker = input.add_ticker_symbol().strip().upper()
+
+        if not new_ticker:
+            status_message.set("Error: Ticker symbol cannot be empty.")
+            return
+        if new_ticker in available_tickers.get():
+            status_message.set(f"'{new_ticker}' is already in the list.")
+            return
+
+        # Step 1: Call the shared helper function to download the CSV data
+        success = fetch_and_save_ticker_data(new_ticker)
+
+        if success:
+            # --- Step 2 (NEW): Update the crypto_tickers.json file ---
+            try:
+                # Read the existing list
+                with open(TICKERS_FILE, 'r') as f:
+                    existing_tickers = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                existing_tickers = []
+
+            # Add the new ticker using a set to prevent duplicates
+            updated_set = set(existing_tickers)
+            updated_set.add(new_ticker)
+
+            # Save the updated list back to the JSON file
+            with open(TICKERS_FILE, 'w') as f:
+                json.dump(sorted(list(updated_set)), f, indent=4)
+            print(f"Updated {TICKERS_FILE} with new ticker: {new_ticker}")
+
+            # Step 3: Update the UI
+            new_list = get_available_tickers()
+            available_tickers.set(new_list)
+            status_message.set(f"Success! Added {new_ticker} to the list.")
+        else:
+            status_message.set(f"Error: Failed to fetch data for {new_ticker}.")
+
+    status_message = reactive.Value("")
+
+    @output
+    @render.text
+    def add_ticker_status():
+        return status_message.get()
 
 # --- Create and Run the App ---
 app = App(app_ui, server)

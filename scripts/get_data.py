@@ -4,6 +4,7 @@ import time
 import pandas as pd
 import numpy as np
 import yfinance as yf
+from data_manager import fetch_and_save_ticker_data
 
 # --- Configuration ---
 DATA_DIR = os.path.join('..', 'data')
@@ -13,34 +14,9 @@ START_DATE_DEFAULT = '2022-01-01'
 
 def initial_download(ticker):
     """
-    Performs a full historical data download for a new ticker.
+    Calls the shared data manager to perform a full download.
     """
-    print(f"Performing initial download for new ticker: {ticker}...")
-
-    # Download data from the default start date to the present
-    today = pd.to_datetime('today').strftime('%Y-%m-%d')
-    try:
-        data = yf.download(ticker, start=START_DATE_DEFAULT, end=today)
-    except Exception as e:
-        print(f"Could not download data for {ticker}. Error: {e}")
-        return
-
-    if isinstance(data.columns, pd.MultiIndex):
-        print("Multi-level header detected. Removing extra 'Ticker' row...")
-        # This keeps the top-level column names ('Close', 'High', etc.)
-        # and discards the lower levels.
-        data.columns = data.columns.get_level_values(0)
-
-    if data.empty:
-        print(f"No data downloaded for {ticker}. It may be a bad ticker symbol.")
-        return
-
-    # Calculate derived metrics and save the new file
-    data['Log_Return'] = np.log(data['Close'] / data['Close'].shift(1))
-
-    csv_path = os.path.join(DATA_DIR, f'{ticker}.csv')
-    data.to_csv(csv_path)
-    print(f"Successfully saved new data file to {csv_path}")
+    fetch_and_save_ticker_data(ticker)
 
 
 def update_existing_data(ticker, csv_path):
