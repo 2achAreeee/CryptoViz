@@ -130,13 +130,14 @@ The CryptoViz dashboard is an interactive web application built with Shiny for P
     * A "Generate Forecast" button calls the backend API.
     * The forecast (point estimate and confidence interval) is overlaid on the chart.
     * A textual summary indicates if the prediction is higher or lower than the previous day's close, with the percentage change.
+* **User-Driven Analysis:**
+    * An input field allows users to add new tickers not currently in the list.
+    * The app fetches data for the new ticker in real-time, saves it, updates `crypto_tickers.json`, and refreshes the dropdowns.
 * **Correlation Analysis Panel:**
     * Users can select multiple cryptocurrencies.
     * Users choose a timeframe (7D, 30D, 90D).
     * A heatmap (using Plotnine, rendered as a static image for now) displays the log return correlations.
-* **User-Driven Analysis:**
-    * An input field allows users to add new tickers not currently in the list.
-    * The app fetches data for the new ticker in real-time, saves it, updates `crypto_tickers.json`, and refreshes the dropdowns.
+
 
 ## Deployment
 
