@@ -122,9 +122,6 @@ To provide short-term price predictions, an ARIMA (Autoregressive Integrated Mov
 
 The CryptoViz dashboard is an interactive web application built with Shiny for Python.
 
-*(Image: You could embed a screenshot of your main dashboard UI here, like the one you provided earlier: `Screenshot 2025-06-02 at 9.07.15 PM.png`. Update path as needed.)*
-
-
 * **Forecasting Panel:**
     * Users select a cryptocurrency from a dynamically updated dropdown.
     * An interactive Plotly chart displays historical close prices.
@@ -134,10 +131,12 @@ The CryptoViz dashboard is an interactive web application built with Shiny for P
 * **User-Driven Analysis:**
     * An input field allows users to add new tickers not currently in the list.
     * The app fetches data for the new ticker in real-time, saves it, updates `crypto_tickers.json`, and refreshes the dropdowns.
+    ![Forecast Panel](images/forecast_panel.png)
 * **Correlation Analysis Panel:**
     * Users can select multiple cryptocurrencies.
     * Users choose a timeframe (7D, 30D, 90D).
     * A heatmap (using Plotnine, rendered as a static image for now) displays the log return correlations.
+    ![Correlation Panel](images/correlation_panel.png)
 
 
 ## Deployment
@@ -171,7 +170,7 @@ The CryptoViz application is deployed on Google Cloud Run for online accessibili
 
 1.  **Clone the repository:**
     ```bash
-    git clone <your-repo-url>
+    git clone <https://github.com/2achAreeee/CryptoViz.git>
     cd CryptoViz
     ```
 
