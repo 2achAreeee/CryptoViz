@@ -56,7 +56,7 @@ The data pipeline is a two-step process:
 1.  **Identifying Top Cryptocurrencies (`scrape_tickers.py`):**
     * Automated web scraping of Yahoo Finance (using Python with `requests` and `lxml`) obtains a current list of the top ~30 cryptocurrencies by market capitalization.
     * This list is saved to `data/crypto_tickers.json` and dynamically guides the subsequent data download process.
-    * *![Top Crypto Web Scraping](images/web_scraping.png)*
+    ![Top Crypto Web Scraping](images/web_scraping.png)*
 
 2.  **Fetching Historical Market Data (`get_data.py` & `data_manager.py`):**
     * The `yfinance` Python package is used to download historical daily data for each ticker found in `crypto_tickers.json`.
@@ -65,7 +65,7 @@ The data pipeline is a two-step process:
     * **Intelligent Updates:** Full historical download for new coins; incremental updates (refreshing the last known day and appending new data) for existing coins.
     * **Derived Metric:** Log Returns (`log(Close_t / Close_t-1)`) are calculated and stored, as they are essential for statistical analysis and modeling.
     * Data for each coin is saved as an individual `.csv` file in the `/data/` directory.
-    * *![yfinance](images/yfinance.png)*
+    ![yfinance](images/yfinance.png)*
 
 The system also supports fetching data for new tickers entered by the user directly in the Shiny app, which are then saved as `.csv` files and added to the master `crypto_tickers.json` list.
 
