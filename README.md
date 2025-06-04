@@ -1,7 +1,8 @@
 # CryptoViz: Interactive Crypto Return Analysis and Prediction Tool
 
 Interactive Crypto Return Analysis and Prediction Tool for STATS 418 FInal Project
-**Live Demo:** [https://cryptoviz-shiny-349535554801.us-central1.run.app/](https://cryptoviz-shiny-349535554801.us-central1.run.app/)
+
+**Live Demo:** [CryptoViz Shiny App](https://cryptoviz-shiny-349535554801.us-central1.run.app/)
 
 ## Overview
 
@@ -73,25 +74,21 @@ The system also supports fetching data for new tickers entered by the user direc
 EDA was performed to understand the characteristics of the cryptocurrency data and inform design choices for the application.
 
 * **Missing Values:** An initial check for missing values was performed. For most major cryptocurrencies, daily data from Yahoo Finance is quite complete. The `Log_Return` will have one missing value at the beginning for each series due to the nature of its calculation.
-    ```
+
     ![Missing Value Analysis](images/missing_value_plot.png)
-    ```
+
 
 * **Price and Volume Trends:** Visualizing historical prices and volumes helps identify major market trends, bull/bear cycles, and periods of high activity.
-    *(Image: Embed your `BTC-USD_closeopen.png` and `BTC-USD_volume.png` here.)*
-    ```
+
     ![BTC-USD Close & Open Prices](images/BTC-USD_closeopen.png)
     *Figure: Bitcoin Close and Open Prices Over Time, showing significant volatility and trend changes.*
-    ```
+
     ![BTC-USD Trading Volume](images/BTC-USD_volume.png)
     *Figure: Bitcoin Trading Volume Over Time, often correlating with major price movements.*
-    ```
 
 * **Correlation Analysis:** An essential aspect of understanding the cryptocurrency market is recognizing that while assets can be influenced by broader trends, they don't all move in perfect lockstep. Our Exploratory Data Analysis confirmed the existence of varying degrees of correlation between the daily log returns of different cryptocurrencies. This observation underscores the value of the CryptoViz correlation panel, as it allows users to visually explore these diverse relationships and identify how closely (or loosely) different assets are connected, which is a key insight for any market participant.
-    ```
     ![Top 10 Crypto Correlation Heatmap](images/top_10_corr.png)
     *Figure: Correlation heatmap of daily close price for the top 10 cryptocurrencies over a selected period. This visualization is interactive in the live application.*
-    ```
     Insights from EDA, such as the time-series nature of prices and the dynamic correlations, directly influenced the features developed in the CryptoViz dashboard.
 
 ## Modeling: ARIMA Time Series Forecasting
@@ -112,11 +109,8 @@ To provide short-term price predictions, an ARIMA (Autoregressive Integrated Mov
     * Initially, a common heuristic like ARIMA(5,1,0) was used.
     * To optimize parameters for a specific series like BTC-USD, the Akaike Information Criterion (AIC) was used. AIC helps select the model that best fits the data while penalizing for an excessive number of parameters.
     * Based on AIC evaluation, the ARIMA order for BTC-USD was updated to **ARIMA(4,1,5)**, as this combination yielded a lower AIC value, suggesting a better trade-off between model fit and complexity.
-        *(Image: Embed your `aic.png` here.)*
-        ```
         ![AIC Values for ARIMA Orders](images/aic.png)
         *Figure: AIC values for different ARIMA(p,d,q) orders for BTC-USD, with (4,1,5) showing a favorable (lower) AIC.*
-        ```
 
 * **Implementation:**
     * The model is trained on the historical daily 'Close' prices.
