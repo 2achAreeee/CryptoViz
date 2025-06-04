@@ -111,6 +111,7 @@ To provide short-term price predictions, an ARIMA (Autoregressive Integrated Mov
     * Based on AIC evaluation, the ARIMA order for BTC-USD was updated to **ARIMA(4,1,5)**, as this combination yielded a lower AIC value, suggesting a better trade-off between model fit and complexity.
         ![AIC Values for ARIMA Orders](images/aic.png)
         *Figure: AIC values for different ARIMA(p,d,q) orders for BTC-USD, with (4,1,5) showing a favorable (lower) AIC.*
+    * To save calculation time for the API, the default model for all cryptoes are set to be **ARIMA(4,1,5)**.
 
 * **Implementation:**
     * The model is trained on the historical daily 'Close' prices.
@@ -191,24 +192,11 @@ The CryptoViz application is deployed on Google Cloud Run for online accessibili
         ```
     * (Alternatively, if you have a root `requirements.txt` or `pyproject.toml` for the whole project, install from there).
 
-### Running Locally (Without Docker)
-
-1.  **Start the Backend API:**
-    * Navigate to the `/backend_api` directory.
-    * Run: `flask run --port 5000` (or `python api.py`)
-
-2.  **Start the Shiny App:**
-    * In a new terminal, navigate to the `/shiny_app` directory.
-    * Ensure the `API_URL` in `app.py` is pointing to your local API (e.g., `http://127.0.0.1:5000/forecast`). You might need to temporarily change it or use an environment variable locally.
-    * Run: `shiny run --reload app.py`
-    * Open your browser to `http://127.0.0.1:8000`.
-
 ### Running Locally (With Docker)
 
 1.  **Build the Docker images:**
     * API: `cd backend_api && docker build -t cryptoviz-api .`
     * Shiny: `cd shiny_app && docker build -t cryptoviz-shiny .` (Ensure Dockerfile paths are correct if building from within the subdirectories, or build from root specifying Dockerfile path).
-      *It's generally better to build from the project root if your Dockerfiles use `COPY . .` to grab the whole project context.*
       ```bash
       # From project root (CryptoViz/)
       docker build -t cryptoviz-api -f backend_api/Dockerfile .
