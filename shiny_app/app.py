@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from shiny import App, render, ui, reactive, req, Session
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import requests
 from datetime import timedelta, date
 from data_manager import fetch_and_save_ticker_data
@@ -39,6 +40,33 @@ TICKERS_FILE = os.path.join(_project_root_dir_global, 'data', 'crypto_tickers.js
 
 # --- Shiny App UI ---
 app_ui = ui.page_navbar(
+    ui.nav_panel("Candlestick",
+                 ui.layout_sidebar(
+                     ui.sidebar(
+                         ui.h4("Candlestick Controls"),
+                         ui.input_select(
+                             "candle_crypto_select",
+                             "Select Cryptocurrency:",
+                             choices=get_available_tickers(),
+                         ),
+                         ui.input_radio_buttons(
+                             "candle_timeframe",
+                             "Timeframe:",
+                             choices={"30D": "Last 30 Days", "90D": "Last 90 Days", "180D": "Last 180 Days",
+                                      "365D": "Last 365 Days", "MAX": "Max"},
+                             selected="180D",
+                         ),
+                         ui.input_selectize(
+                             "candle_ma_windows",
+                             "Moving Averages:",
+                             choices=["7", "20", "50", "100", "200"],
+                             selected=["20", "50"],
+                             multiple=True,
+                         ),
+                     ),
+                     ui.output_ui("candlestick_plot"),
+                 ),
+                 ),
     ui.nav_panel("Forecasting",
                  ui.layout_sidebar(
                      ui.sidebar(
@@ -108,6 +136,13 @@ def server(input, output, session: Session):
         elif not corr_selected_to_set and tickers:
             corr_selected_to_set = tickers[:1]
         ui.update_selectize("corr_crypto_select", choices=tickers, selected=corr_selected_to_set)
+        current_candle_selected = input.candle_crypto_select()
+        candle_selected_to_set = None
+        if current_candle_selected in tickers:
+            candle_selected_to_set = current_candle_selected
+        elif tickers:
+            candle_selected_to_set = tickers[0]
+        ui.update_select("candle_crypto_select", choices=tickers, selected=candle_selected_to_set)
 
     forecast_result = reactive.Value(None)
 
@@ -215,6 +250,88 @@ def server(input, output, session: Session):
                 fig.add_vline(x=split_date, line_dash="dot", line_color="gray")
         fig.update_layout(title=f"Historical Close Price for {input.forecast_crypto_select()}", xaxis_title="Date",
                           yaxis_title="Price (USD)")
+        return ui.HTML(fig.to_html(full_html=False, include_plotlyjs='cdn'))
+
+    @output
+    @render.ui
+    def candlestick_plot():
+        ticker = input.candle_crypto_select()
+        if not ticker:
+            return ui.p("Select a ticker to view the candlestick chart.", class_="text-muted")
+        file_path = os.path.join(get_data_dir(), f"{ticker}.csv")
+        try:
+            df = pd.read_csv(file_path, index_col=0, parse_dates=True).reset_index()
+            df = df.rename(columns={'index': 'Date'})
+        except FileNotFoundError:
+            return ui.p("Data not available for the selected ticker.", style="color: orange;")
+
+        if df.empty:
+            return ui.p("Data not available for the selected ticker.", style="color: orange;")
+
+        timeframe = input.candle_timeframe()
+        if timeframe != "MAX":
+            days = int(timeframe[:-1])
+            start_date_dt = date.today() - timedelta(days=days)
+            df = df[df['Date'] >= pd.to_datetime(start_date_dt)]
+
+        if df.empty:
+            return ui.p("No data available for the selected timeframe.", style="color: orange;")
+
+        fig = make_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.08,
+            row_heights=[0.7, 0.3],
+            subplot_titles=(f"{ticker} Candlestick", "Volume")
+        )
+
+        fig.add_trace(
+            go.Candlestick(
+                x=df['Date'],
+                open=df['Open'],
+                high=df['High'],
+                low=df['Low'],
+                close=df['Close'],
+                name="Price"
+            ),
+            row=1, col=1
+        )
+
+        ma_windows = [int(w) for w in (input.candle_ma_windows() or [])]
+        for window in ma_windows:
+            if window > 1:
+                df[f"MA_{window}"] = df['Close'].rolling(window=window).mean()
+                fig.add_trace(
+                    go.Scatter(
+                        x=df['Date'],
+                        y=df[f"MA_{window}"],
+                        mode='lines',
+                        name=f"MA {window}"
+                    ),
+                    row=1, col=1
+                )
+        fig.add_trace(
+            go.Bar(
+                x=df['Date'],
+                y=df['Volume'],
+                name="Volume",
+                marker_color="rgba(100, 149, 237, 0.6)"
+            ),
+            row=2, col=1
+        )
+
+        fig.update_layout(
+            title=f"{ticker} Price and Volume",
+            xaxis_title="Date",
+            yaxis_title="Price (USD)",
+            xaxis2_title="Date",
+            yaxis2_title="Volume",
+            xaxis_rangeslider_visible=False,
+            height=700,
+            showlegend=False
+        )
+
         return ui.HTML(fig.to_html(full_html=False, include_plotlyjs='cdn'))
 
 
