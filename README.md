@@ -15,9 +15,14 @@ The application features a two-part data pipeline for acquiring and updating mar
 * **Dynamic Ticker List:** Automatically scrapes Yahoo Finance to get a list of top cryptocurrencies by market capitalization.
 * **Comprehensive Data Acquisition:** Downloads daily OHLC (Open, High, Low, Close) price data and trading volume using the `yfinance` library. Includes intelligent updates for existing data and calculation of log returns.
 * **Interactive Price Visualization:** Users can select a cryptocurrency and view its historical close prices' trend on an interactive Plotly chart.
+* **Candlestick & Volume Panel (New):**
+    * Interactive candlestick chart with volume subplot.
+    * Timeframe filter (30D, 90D, 180D, 365D, MAX).
+    * Moving average overlays (7, 20, 50, 100, 200 days).
 * **ARIMA Time Series Forecasting:**
-    * Generates one-step-ahead (next day) price forecasts for selected cryptocurrencies.
-    * Displays the predicted price along with a 95% confidence interval.
+    * Generates multi-day price forecasts for selected cryptocurrencies.
+    * Plots train data, test data, test predictions, and forecast results on the same chart.
+    * Displays the predicted price (last forecast day) along with a 95% confidence interval.
     * Provides a comparison of the forecast with the previous day's closing price.
 * **Correlation Analysis:**
     * Allows users to select multiple cryptocurrencies and a timeframe (7D, 30D, 90D).
@@ -115,17 +120,22 @@ To provide short-term price predictions, an ARIMA (Autoregressive Integrated Mov
 
 * **Implementation:**
     * The model is trained on the historical daily 'Close' prices.
-    * It generates a one-step-ahead forecast (next day's price) with a 95% confidence interval.
+    * It generates a multi-day forecast (user-selected horizon) with a 95% confidence interval.
+    * The backend also returns test predictions and split metadata so the UI can visualize train/test vs. forecast.
     * This forecasting logic is encapsulated in a Flask API (`/backend_api/api.py`) for easy access by the frontend.
 
 ## Application Dashboard
 
 The CryptoViz dashboard is an interactive web application built with Shiny for Python.
 
+* **Candlestick Panel (New):**
+    * Users select a cryptocurrency to view a candlestick chart and volume trend.
+    * Timeframe filter (30D, 90D, 180D, 365D, MAX).
+    * Moving average overlays (7, 20, 50, 100, 200 days).
 * **Forecasting Panel:**
     * Users select a cryptocurrency from a dynamically updated dropdown.
-    * An interactive Plotly chart displays historical close prices.
-    * A "Generate Forecast" button calls the backend API.
+    * An interactive Plotly chart displays train/test split, test predictions, and multi-day forecast.
+    * A "Forecast" button calls the backend API with the selected horizon.
     * The forecast (point estimate and confidence interval) is overlaid on the chart.
     * A textual summary indicates if the prediction is higher or lower than the previous day's close, with the percentage change.
 * **User-Driven Analysis:**
@@ -194,13 +204,12 @@ The CryptoViz application is deployed on Google Cloud Run for online accessibili
 ### Running Locally (With Docker)
 
 1.  **Build the Docker images:**
-    * API: `cd backend_api && docker build -t cryptoviz-api .`
-    * Shiny: `cd shiny_app && docker build -t cryptoviz-shiny .` (Ensure Dockerfile paths are correct if building from within the subdirectories, or build from root specifying Dockerfile path).
-      ```bash
-      # From project root (CryptoViz/)
-      docker build -t cryptoviz-api -f backend_api/Dockerfile .
-      docker build -t cryptoviz-shiny -f shiny_app/Dockerfile .
-      ```
+    Build from the **project root** so the Shiny image includes `/data`.
+    ```bash
+    # From project root (CryptoViz/)
+    docker build -t cryptoviz-api -f backend_api/Dockerfile .
+    docker build -t cryptoviz-shiny -f shiny_app/Dockerfile .
+    ```
 
 2.  **Create a Docker network:**
     ```bash
@@ -212,9 +221,11 @@ The CryptoViz application is deployed on Google Cloud Run for online accessibili
         ```bash
         docker run --rm --name cryptoviz-api-container --network cryptoviz-net -p 5001:5000 cryptoviz-api
         ```
-    * Shiny App (ensure `API_URL` in `app.py` is `http://cryptoviz-api-container:5000/forecast` for this setup):
+    * Shiny App (set `API_URL` to point at the API container):
         ```bash
-        docker run --rm --name cryptoviz-shiny-container --network cryptoviz-net -p 8000:8000 cryptoviz-shiny
+        docker run --rm --name cryptoviz-shiny-container --network cryptoviz-net \
+          -e API_URL=http://cryptoviz-api-container:5000/forecast \
+          -p 8000:8000 cryptoviz-shiny
         ```
     * Access the app at `http://localhost:8000`.
 
@@ -230,5 +241,3 @@ The CryptoViz application is deployed on Google Cloud Run for online accessibili
 ## Author
 
 * **Zeyan Huang**
-
-
