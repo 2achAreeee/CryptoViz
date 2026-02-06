@@ -48,7 +48,8 @@ app_ui = ui.page_navbar(
                              "Select Cryptocurrency:",
                              choices=get_available_tickers(),
                          ),
-                         ui.input_action_button("get_forecast", "Generate Forecast", class_="btn-primary"),
+                         ui.input_numeric("predict_ahead_days", "Prediction Days Ahead:", max=30, min=1, value=1),
+                         ui.input_action_button("forecast", "Forecast", class_="btn-primary"),
                          ui.hr(),
                          ui.h4("User-Driven Analysis"),
                          ui.input_text("add_ticker_symbol", "Add New Ticker:", placeholder="e.g., MATIC-USD"),
@@ -129,17 +130,18 @@ def server(input, output, session: Session):
             return pd.DataFrame()
 
     @reactive.Effect
-    @reactive.event(input.get_forecast)
+    @reactive.event(input.forecast)
     def get_forecast_from_api():
         df = load_forecast_data()
+        forecast_day = input.predict_ahead_days()
         if df.empty or len(df) < 50:
             forecast_result.set({"error": "Not enough data to forecast."})
             return
-        price_list = df['Close'].tail(100).tolist()
+        price_list = df['Close'].tail(120).tolist()
         api_url = os.environ.get("API_URL", "http://cryptoviz-api-container:5000/forecast")
-        json_payload = {"close_prices": price_list}
+        json_payload = {"close_prices": price_list, "predict_days": forecast_day}
         try:
-            response = requests.post(api_url, json=json_payload, timeout=10)
+            response = requests.post(api_url, json=json_payload, timeout=30)
             if response.status_code == 200:
                 forecast_result.set(response.json())
             else:
@@ -151,35 +153,70 @@ def server(input, output, session: Session):
     @render.ui
     def price_plot():
         df = load_forecast_data()
+        df_hist = df.iloc[:-120]
+        df_send = df.tail(120)
         if df.empty:  # Replaced req(not df.empty) for explicit UI feedback
             return ui.p("Data not available for the selected ticker.", style="color: orange;")
 
         fig = go.Figure()
         fig.add_trace(
-            go.Scatter(x=df['Date'], y=df['Close'], mode='lines', name='Close Price', line=dict(color='#007bff')))
+            go.Scatter(x=df_hist['Date'], y=df_hist['Close'], mode='lines',
+                       name='Train', line=dict(color='#1f77b4')))
         result = forecast_result()
-        if result and "predicted_price" in result:
-            last_date = df['Date'].iloc[-1]
-            forecast_date = last_date + timedelta(days=1)
-            pred_price = result['predicted_price']
-            lower_b = result['confidence_interval_lower']
-            upper_b = result['confidence_interval_upper']
-            fig.add_trace(
-                go.Scatter(x=[forecast_date], y=[pred_price], mode='markers', marker=dict(color='red', size=10),
-                           name='Forecast'))
-            fig.add_trace(go.Scatter(
-                x=[last_date, forecast_date, forecast_date, last_date],
-                y=[df['Close'].iloc[-1], lower_b, upper_b, df['Close'].iloc[-1]],
-                fill="toself",
-                fillcolor="rgba(255,0,0,0.2)",
-                line=dict(color="rgba(255,255,255,0)"),
-                hoverinfo="skip",
-                showlegend=False,
-                name='Confidence Interval'
-            ))
+        if result and "train_size" in result:
+            train_size = result.get("train_size", 0)
+            test_size = result.get("test_size", 0)
+            test_pred = result.get("test_pred", [])
+            forecast_pred = result.get("forecast_pred", [])
+            lower_b = result.get("confidence_interval_lower", [])
+            upper_b = result.get("confidence_interval_upper", [])
+
+            train_df = df_send.iloc[:train_size]
+            test_df = df_send.iloc[train_size:train_size + test_size]
+
+            if not train_df.empty:
+                fig.add_trace(
+                    go.Scatter(x=train_df['Date'], y=train_df['Close'], mode='lines',
+                               name='Train', line=dict(color='#1f77b4')))
+            if not test_df.empty:
+                fig.add_trace(
+                    go.Scatter(x=test_df['Date'], y=test_df['Close'], mode='lines',
+                               name='Test', line=dict(color='#ff7f0e')))
+
+            if test_df.shape[0] and test_pred:
+                steps = min(len(test_df), len(test_pred))
+                fig.add_trace(
+                    go.Scatter(x=test_df['Date'].iloc[:steps], y=test_pred[:steps], mode='lines',
+                               name='Test Prediction', line=dict(color='#2ca02c', dash='dash')))
+
+            if forecast_pred:
+                last_date = df['Date'].iloc[-1]
+                steps = min(len(forecast_pred), len(lower_b), len(upper_b))
+                forecast_dates = [last_date + timedelta(days=i) for i in range(1, steps + 1)]
+                fig.add_trace(
+                    go.Scatter(x=forecast_dates, y=forecast_pred[:steps], mode='lines+markers',
+                               marker=dict(color='red', size=6), line=dict(color='red'), name='Forecast'))
+                if steps:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=forecast_dates + forecast_dates[::-1],
+                            y=upper_b[:steps] + lower_b[:steps][::-1],
+                            fill="toself",
+                            fillcolor="rgba(255,0,0,0.2)",
+                            line=dict(color="rgba(255,255,255,0)"),
+                            hoverinfo="skip",
+                            showlegend=False,
+                            name='Confidence Interval'
+                        )
+                    )
+
+            if train_df.shape[0] and test_df.shape[0]:
+                split_date = test_df['Date'].iloc[0]
+                fig.add_vline(x=split_date, line_dash="dot", line_color="gray")
         fig.update_layout(title=f"Historical Close Price for {input.forecast_crypto_select()}", xaxis_title="Date",
                           yaxis_title="Price (USD)")
         return ui.HTML(fig.to_html(full_html=False, include_plotlyjs='cdn'))
+
 
     @output
     @render.ui
@@ -187,19 +224,26 @@ def server(input, output, session: Session):
         result = forecast_result()
         if not result: return ui.p("Click the button to generate a forecast.", class_="text-muted")
         if "error" in result: return ui.div(ui.h5("Error:", style="color: red;"), ui.p(result["error"]))
-        if "predicted_price" in result:
+        if "forecast_pred" in result:
             df = load_forecast_data()
             if df.empty: return ui.p("Cannot display comparison: data missing.", style="color: orange;")
             last_close = df['Close'].iloc[-1]
-            price, lower, upper = result['predicted_price'], result['confidence_interval_lower'], result[
-                'confidence_interval_upper']
+            predicted_prices = result['forecast_pred']
+            lower_list = result['confidence_interval_lower']
+            upper_list = result['confidence_interval_upper']
+            if not predicted_prices:
+                return ui.p("Forecast returned no data.", style="color: orange;")
+            price = predicted_prices[-1]
+            lower = lower_list[-1] if lower_list else None
+            upper = upper_list[-1] if upper_list else None
             comparison_text, text_color = "", "gray"
             change_pct = ((price - last_close) / last_close) * 100 if last_close != 0 else 0
             if price > last_close:
                 comparison_text, text_color = f"higher than yesterday's close of ${last_close:,.2f} ({change_pct:+.2f}%)", "green"
             else:
                 comparison_text, text_color = f"lower than yesterday's close of ${last_close:,.2f} ({change_pct:+.2f}%)", "red"
-            return ui.div(ui.h4("ARIMA Forecast"), ui.p(f"Predicted Next Day's Close: ${price:,.2f}"),
+            return ui.div(ui.h4("ARIMA Forecast"),
+                          ui.p(f"Predicted Close on Day {len(predicted_prices)}: ${price:,.2f}"),
                           ui.p(f"This prediction is ",
                                ui.span(comparison_text, style=f"color: {text_color}; font-weight: bold;")),
                           ui.p(f"95% Confidence Interval: ${lower:,.2f} to ${upper:,.2f}"))
