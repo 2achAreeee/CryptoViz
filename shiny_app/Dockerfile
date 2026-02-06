@@ -2,13 +2,12 @@
 
 FROM python:3.9-slim
 
-# Set the working directory in the container
+# Copy the entire repo so the image includes all data and project files.
 WORKDIR /app
+COPY ./ /app/
 
-# Copy only the shiny_app directory contents into the container at /app
-COPY ./shiny_app/ /app/
-
-COPY ./data/ /app/data/
+# Run the Shiny app from its directory.
+WORKDIR /app/shiny_app
 
 RUN pip install --no-cache-dir -r requirements.txt
 

@@ -6,14 +6,12 @@ FROM python:3.9-slim
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy the requirements file into the container at /app
-COPY requirements.txt .
-
-# Install any needed packages specified in requirements.txt
+# Copy requirements first for better build caching, then install deps
+COPY ./backend_api/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the current directory contents into the container at /app
-COPY . .
+# Copy the backend app into the container
+COPY ./backend_api/ /app/
 
 # Make port 5000 available to the world outside this container
 EXPOSE 5000

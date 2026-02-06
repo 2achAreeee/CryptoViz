@@ -12,9 +12,14 @@ from data_manager import fetch_and_save_ticker_data
 
 
 # --- Helper Function to Get Available Tickers ---
+def get_data_dir():
+    app_script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root_dir = os.path.dirname(app_script_dir)
+    return os.path.join(project_root_dir, 'data')
+
+
 def get_available_tickers():
-    app_script_dir = os.path.dirname(os.path.abspath(__file__)) # This should be /app in the container
-    data_dir_absolute_path = os.path.join(app_script_dir, 'data')
+    data_dir_absolute_path = get_data_dir()
 
     if not os.path.exists(data_dir_absolute_path):
         os.makedirs(data_dir_absolute_path, exist_ok=True)  # Create if it doesn't exist
@@ -105,13 +110,17 @@ def server(input, output, session: Session):
 
     forecast_result = reactive.Value(None)
 
+    @reactive.Effect
+    def clear_forecast_on_ticker_change():
+        input.forecast_crypto_select()
+        forecast_result.set(None)
+
     @reactive.Calc
     def load_forecast_data():
         ticker = input.forecast_crypto_select()
         req(ticker)
-        # Path relative to app.py's directory
-        app_script_dir = os.path.dirname(os.path.abspath(__file__))
-        file_path = os.path.join(app_script_dir, 'data', f"{ticker}.csv")
+        # Path relative to project root
+        file_path = os.path.join(get_data_dir(), f"{ticker}.csv")
         try:
             df = pd.read_csv(file_path, index_col=0, parse_dates=True).reset_index()
             df = df.rename(columns={'index': 'Date'})
@@ -206,11 +215,9 @@ def server(input, output, session: Session):
         start_date_dt = date.today() - timedelta(days=days)
         log_returns_df = pd.DataFrame()
 
-        app_script_dir = os.path.dirname(os.path.abspath(__file__))
-
         for ticker in tickers:
             try:
-                file_path = os.path.join(app_script_dir, 'data', f"{ticker}.csv")
+                file_path = os.path.join(get_data_dir(), f"{ticker}.csv")
                 df_read = pd.read_csv(file_path, index_col='Date', parse_dates=True)
                 # Ensure index is DatetimeIndex for comparison
                 df_filtered = df_read[df_read.index >= pd.to_datetime(start_date_dt)]

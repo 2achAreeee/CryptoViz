@@ -25,7 +25,7 @@ def update_existing_data(ticker, csv_path):
     """
     print(f"Updating existing data for ticker: {ticker}...")
 
-    existing_df = pd.read_csv(csv_path, header=[0, 1], index_col=0, parse_dates=True)
+    existing_df = pd.read_csv(csv_path, header=True, index_col=0, parse_dates=True)
 
     if existing_df.empty:
         print(f"Existing file for {ticker} is empty. Performing initial download instead.")
@@ -114,3 +114,4 @@ if __name__ == '__main__':
 
     # update_existing_data("BTC-USD", "../data/BTC-USD.csv")
     # initial_download("BTC-USD")
+
